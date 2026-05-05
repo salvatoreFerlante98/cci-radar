@@ -1,0 +1,13 @@
+{
+  "itemGroup.cci_radar": "Example Mod Tab",
+  "block.cci_radar.example_block": "Example Block",
+  "item.cci_radar.example_item": "Example Item",
+
+  "cci_radar.configuration.title": "Colonial Resource Radar Configs",
+  "cci_radar.configuration.section.cci_radar.common.toml": "Colonial Resource Radar Configs",
+  "cci_radar.configuration.section.cci_radar.common.toml.title": "Colonial Resource Radar Configs",
+  "cci_radar.configuration.items": "Item List",
+  "cci_radar.configuration.logDirtBlock": "Log Dirt Block",
+  "cci_radar.configuration.magicNumberIntroduction": "Magic Number Text",
+  "cci_radar.configuration.magicNumber": "Magic Number"
+}
