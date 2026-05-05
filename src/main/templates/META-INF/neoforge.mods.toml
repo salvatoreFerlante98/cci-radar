@@ -88,6 +88,26 @@ Example mod description.
     ordering="NONE"
     side="BOTH"
 
+# JourneyMap – optional soft dependency.
+# The radar overlay is rendered on JourneyMap's full-screen map when present.
+# The mod must load and function without JourneyMap (server-side, or vanilla clients).
+[[dependencies.${mod_id}]]
+    modId="journeymap"
+    type="optional"
+    versionRange="[6.0.0-beta.1,)"
+    ordering="AFTER"
+    side="CLIENT"
+
+# Create Ore Excavation – optional.
+# COE integration is isolated to a future dedicated package and is not part of the core radar.
+# The mod must load fully without COE present.
+[[dependencies.${mod_id}]]
+    modId="createoreexcavation"
+    type="optional"
+    versionRange="[1.6.0,)"
+    ordering="NONE"
+    side="BOTH"
+
 # Features are specific properties of the game environment, that you may want to declare you require. This example declares
 # that your mod requires GL version 3.2 or higher. Other features will be added. They are side aware so declaring this won't
 # stop your mod loading on the server for example.

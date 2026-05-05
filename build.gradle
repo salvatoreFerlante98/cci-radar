@@ -27,7 +27,34 @@ sourceSets.main.resources {
 }
 
 repositories {
-    // Add here additional repositories if required by some of the dependencies below.
+    // JourneyMap API – SNAPSHOT releases hosted on BlameJared Maven
+    maven {
+        name = "BlameJared Maven (JourneyMap API)"
+        url = "https://maven.blamejared.com"
+        content { includeGroup "info.journeymap" }
+    }
+    // Create mod, Ponder UI library, Flywheel rendering engine
+    maven {
+        name = "Create Maven"
+        url = "https://maven.createmod.net"
+        content {
+            includeGroup "com.simibubi.create"
+            includeGroup "net.createmod.ponder"
+            includeGroup "dev.engine-room.flywheel"
+        }
+    }
+    // Registrate – Create utility library
+    maven {
+        name = "Ithundxr Snapshots (Registrate)"
+        url = "https://maven.ithundxr.dev/snapshots"
+        content { includeGroup "com.tterrag.registrate" }
+    }
+    // Modrinth Maven – used for Create Ore Excavation full-mod JAR
+    maven {
+        name = "Modrinth Maven"
+        url = "https://api.modrinth.com/maven"
+        content { includeGroup "maven.modrinth" }
+    }
 }
 
 base {
@@ -118,27 +145,27 @@ configurations {
 }
 
 dependencies {
-    // Example optional mod dependency with JEI
-    // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
-    // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
-    // compileOnly "mezz.jei:jei-${mc_version}-neoforge-api:${jei_version}"
-    // We add the full version to localRuntime, not runtimeOnly, so that we do not publish a dependency on it
-    // localRuntime "mezz.jei:jei-${mc_version}-neoforge:${jei_version}"
+    // JourneyMap API – compile-only; no JourneyMap classes may appear in common code.
+    // The full mod is NOT added as localRuntime yet: no integration code exists at this phase.
+    // changing=true is required because the artifact is a SNAPSHOT.
+    compileOnly(group: 'info.journeymap', name: 'journeymap-api-neoforge',
+            version: project.journeymap_api_version) { changing = true }
 
-    // Example mod dependency using a mod jar from ./libs with a flat dir repository
-    // This maps to ./libs/coolmod-${mc_version}-${coolmod_version}.jar
-    // The group id is ignored when searching -- in this case, it is "blank"
-    // implementation "blank:coolmod-${mc_version}:${coolmod_version}"
+    // Create Ore Excavation – full mod JAR, runtime only.
+    // Integration with COE is deferred to a future isolated package; no COE classes in common code.
+    localRuntime "maven.modrinth:create-ore-excavation:${coe_version}"
 
-    // Example mod dependency using a file as dependency
-    // implementation files("libs/coolmod-${mc_version}-${coolmod_version}.jar")
-
-    // Example project dependency using a sister or child project:
-    // implementation project(":myproject")
-
-    // For more info:
-    // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
-    // http://www.gradle.org/docs/current/userguide/dependency_management.html
+    // Create mod (required at runtime by COE).
+    // Full JAR (no :slim) so assets and data load correctly in runClient.
+    // transitive=false prevents pulling Create's optional-compat POM deps
+    // (JEI, FarmersDelight, FTB, CC:Tweaked, etc.) which are not on Maven.
+    localRuntime("com.simibubi.create:create-1.21.1:${create_version}") {
+        transitive = false
+    }
+    // Create's three required runtime libraries (versions from wiki.createmod.net)
+    localRuntime "net.createmod.ponder:ponder-neoforge:${ponder_version}"
+    localRuntime "dev.engine-room.flywheel:flywheel-neoforge-1.21.1:${flywheel_version}"
+    localRuntime "com.tterrag.registrate:Registrate:${registrate_version}"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
