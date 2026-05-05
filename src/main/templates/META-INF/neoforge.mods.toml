@@ -94,7 +94,7 @@ Example mod description.
 [[dependencies.${mod_id}]]
     modId="journeymap"
     type="optional"
-    versionRange="[6.0.0-beta.1,)"
+    versionRange="[1.21.1-6.0.0-beta.1,)"
     ordering="AFTER"
     side="CLIENT"
 

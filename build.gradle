@@ -145,11 +145,12 @@ configurations {
 }
 
 dependencies {
-    // JourneyMap API – compile-only; no JourneyMap classes may appear in common code.
-    // The full mod is NOT added as localRuntime yet: no integration code exists at this phase.
+    // JourneyMap API – compile-only; no JourneyMap classes may appear outside client/journeymap/.
     // changing=true is required because the artifact is a SNAPSHOT.
     compileOnly(group: 'info.journeymap', name: 'journeymap-api-neoforge',
             version: project.journeymap_api_version) { changing = true }
+    // JourneyMap full mod – local dev runtime only; not a published dependency.
+    localRuntime "maven.modrinth:journeymap:${journeymap_mod_version}"
 
     // Create Ore Excavation – full mod JAR, runtime only.
     // Integration with COE is deferred to a future isolated package; no COE classes in common code.
