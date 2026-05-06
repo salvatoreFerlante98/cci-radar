@@ -55,6 +55,9 @@ public final class CciCommands {
                                         .executes(ctx -> resetTargets(ctx, EntityArgument.getPlayers(ctx, "targets")))
                                 )
                         )
+                        .then(Commands.literal("resync")
+                                .executes(CciCommands::resync)
+                        )
                         .then(Commands.literal("debug_fake_veins")
                                 .requires(src -> src.hasPermission(2))
                                 .executes(CciCommands::debugFakeVeins)
@@ -122,6 +125,24 @@ public final class CciCommands {
                 () -> Component.literal("[CCI Radar] Progress reset for " + targets.size() + " player(s)."),
                 true);
         return targets.size();
+    }
+
+    // ── resync ────────────────────────────────────────────────────────────────
+
+    /**
+     * Re-sends the player's currently visible cached veins without rescanning.
+     * Useful after JourneyMap reload or client desync.
+     * No permission requirement — each player can resync their own markers.
+     */
+    private static int resync(CommandContext<CommandSourceStack> ctx)
+            throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        VeinSyncManager.syncToPlayer(player.server, player);
+        int visible = VeinSyncManager.countVisibleForPlayer(player.server, player);
+        ctx.getSource().sendSuccess(
+                () -> Component.literal("[CCI Radar] Resynced " + visible + " visible vein(s) to client."),
+                false);
+        return visible;
     }
 
     // ── debug_fake_veins ─────────────────────────────────────────────────────
@@ -207,7 +228,6 @@ public final class CciCommands {
         int tier = getTierForResourceKey(vein.cciResourceKey());
         boolean tierUnlocked = tier >= 0 &&
                 PlayerProgressData.get(server).getUnlockedTiers(player.getUUID()).contains(tier);
-
         boolean markerVisible = vein.cciResourceKey() != null && tierUnlocked;
 
         if (markerVisible) {
@@ -217,6 +237,7 @@ public final class CciCommands {
         String mappedKey = vein.cciResourceKey() != null ? vein.cciResourceKey() : "(unmapped)";
         String tierStr = tier >= 0 ? String.valueOf(tier) : "unknown";
         String addedStr = added ? "yes (newly added)" : "already present";
+        String markerId = stableMarkerId(vein.dimension(), vein.chunkX(), vein.chunkZ());
 
         ctx.getSource().sendSuccess(() -> Component.literal(
                 "[CCI Radar] debug_coe_chunk:"
@@ -230,6 +251,7 @@ public final class CciCommands {
                         + "\n  added to WorldVeinCache: " + addedStr
                         + "\n  sync sent: " + (markerVisible ? "yes" : "no (tier locked)")
                         + "\n  marker visible: " + (markerVisible ? "yes" : "no")
+                        + "\n  marker id: " + markerId
         ), false);
 
         return 1;
@@ -244,6 +266,7 @@ public final class CciCommands {
 
         Set<Integer> unlocked = PlayerProgressData.get(server).getUnlockedTiers(player.getUUID());
         List<DetectedVein> allVeins = WorldVeinData.get(server).getAll();
+        boolean fakeActive = VeinSyncManager.isFakeVeinsActive(player.getUUID());
 
         List<DetectedVein> visible = allVeins.stream()
                 .filter(v -> v.cciResourceKey() != null)
@@ -252,22 +275,32 @@ public final class CciCommands {
 
         StringBuilder sb = new StringBuilder();
         sb.append("[CCI Radar] debug_visible_veins:");
-        sb.append("\n  dim: ").append(player.serverLevel().dimension().location());
+        sb.append("\n  current_dim: ").append(player.serverLevel().dimension().location());
         sb.append("\n  player: ").append(player.getName().getString());
         sb.append("\n  unlocked_tiers: ").append(unlocked.isEmpty() ? "none" : unlocked.toString());
         sb.append("\n  cached_real_veins_total: ").append(allVeins.size());
-        sb.append("\n  visible_veins: ").append(visible.size());
+        sb.append("\n  visible_real_veins_total: ").append(visible.size());
+        sb.append("\n  fake_debug_veins_active: ").append(fakeActive ? "yes" : "no");
 
         if (!visible.isEmpty()) {
-            sb.append("\n  --- visible veins ---");
-            for (DetectedVein v : visible) {
+            int limit = Math.min(visible.size(), 20);
+            sb.append("\n  --- first ").append(limit).append(" visible veins ---");
+            for (int i = 0; i < limit; i++) {
+                DetectedVein v = visible.get(i);
                 int tier = getTierForResourceKey(v.cciResourceKey());
                 ResourceDef def = ResourceRegistry.get(v.cciResourceKey());
                 String label = def != null ? def.label() : v.cciResourceKey();
-                sb.append("\n    [").append(v.chunkX()).append(", ").append(v.chunkZ()).append("] ")
-                  .append(label).append(" (").append(v.cciResourceKey())
-                  .append(") tier ").append(tier >= 0 ? tier : "?")
-                  .append(" in ").append(v.dimension());
+                String markerId = stableMarkerId(v.dimension(), v.chunkX(), v.chunkZ());
+                sb.append("\n  [").append(i + 1).append("] ")
+                  .append(v.cciResourceKey())
+                  .append(" | ").append(label)
+                  .append(" | tier ").append(tier >= 0 ? tier : "?")
+                  .append(" | ").append(v.dimension())
+                  .append(" | chunk [").append(v.chunkX()).append(", ").append(v.chunkZ()).append("]")
+                  .append(" | id: ").append(markerId);
+            }
+            if (visible.size() > 20) {
+                sb.append("\n  ... and ").append(visible.size() - 20).append(" more");
             }
         }
 
@@ -278,14 +311,20 @@ public final class CciCommands {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    /**
-     * Returns the tier for a CCI resource key by checking config lists, or -1 if unknown.
-     */
+    /** Returns the tier for a CCI resource key by checking config lists, or -1 if unknown. */
     static int getTierForResourceKey(String cciKey) {
         if (cciKey == null) return -1;
         for (int tier = 0; tier <= 1; tier++) {
             if (CciConfig.getResourcesForTier(tier).contains(cciKey)) return tier;
         }
         return -1;
+    }
+
+    /**
+     * Stable human-readable marker identifier for a vein position.
+     * Used in debug output; corresponds to the id used in CciJourneyMapPlugin.
+     */
+    static String stableMarkerId(net.minecraft.resources.ResourceLocation dim, int cx, int cz) {
+        return "cci_vein:" + dim + ":" + cx + "," + cz;
     }
 }

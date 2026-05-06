@@ -10,18 +10,28 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public final class VeinSyncManager {
+
+    /**
+     * Tracks players whose client is currently displaying fake debug veins (not real veins).
+     * Cleared when real veins are synced to the player.
+     */
+    private static final Set<UUID> FAKE_VEIN_PLAYERS = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     /**
      * Sends real detected veins (from WorldVeinData) filtered by the player's unlocked tiers.
      * If no scan has been run yet, WorldVeinData is empty and the client receives an empty list.
      */
     public static void syncToPlayer(MinecraftServer server, ServerPlayer player) {
+        FAKE_VEIN_PLAYERS.remove(player.getUUID());
         Set<Integer> unlocked = PlayerProgressData.get(server).getUnlockedTiers(player.getUUID());
         List<VeinEntry> veins = WorldVeinData.get(server).getAll().stream()
                 .filter(v -> v.cciResourceKey() != null)
@@ -52,10 +62,17 @@ public final class VeinSyncManager {
                 .count();
     }
 
+    /** Returns true if the player's client last received fake debug veins (not real veins). */
+    public static boolean isFakeVeinsActive(UUID playerId) {
+        return FAKE_VEIN_PLAYERS.contains(playerId);
+    }
+
     /**
      * Sends ALL fake veins directly (debug command — bypasses tiers and WorldVeinData).
+     * Marks the player as being in fake-vein mode until real veins are synced.
      */
     public static void syncAllFakeVeinsToPlayer(ServerPlayer player) {
+        FAKE_VEIN_PLAYERS.add(player.getUUID());
         PacketDistributor.sendToPlayer(player, new VisibleVeinsPayload(FakeVeinProvider.getAllVeins()));
     }
 

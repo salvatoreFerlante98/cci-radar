@@ -7,8 +7,12 @@ import com.mojang.logging.LogUtils;
 import journeymap.api.v2.client.IClientAPI;
 import journeymap.api.v2.client.IClientPlugin;
 import journeymap.api.v2.client.display.MarkerOverlay;
+import journeymap.api.v2.client.display.PolygonOverlay;
 import journeymap.api.v2.client.event.MappingEvent;
 import journeymap.api.v2.client.model.MapImage;
+import journeymap.api.v2.client.model.MapPolygon;
+import journeymap.api.v2.client.model.ShapeProperties;
+import journeymap.api.v2.client.util.PolygonHelper;
 import journeymap.api.v2.common.JourneyMapPlugin;
 import journeymap.api.v2.common.event.ClientEventRegistry;
 import net.minecraft.core.BlockPos;
@@ -25,6 +29,8 @@ import java.util.List;
  *
  * Discovered at runtime by JourneyMap via the {@link JourneyMapPlugin} annotation.
  * All JourneyMap API references are isolated to this package.
+ *
+ * Renders both a point marker (icon) and a chunk-boundary polygon for each visible vein.
  */
 @JourneyMapPlugin(apiVersion = "2.0.0")
 public class CciJourneyMapPlugin implements IClientPlugin {
@@ -72,30 +78,59 @@ public class CciJourneyMapPlugin implements IClientPlugin {
 
         List<VeinEntry> veins = ClientVeinStore.getVeins();
         for (VeinEntry vein : veins) {
-            try {
-                BlockPos pos = new BlockPos(vein.chunkX() * 16 + 8, 64, vein.chunkZ() * 16 + 8);
-
-                MapImage icon = new MapImage(
-                        ResourceLocation.parse(vein.iconPath()),
-                        0, 0, 8, 8,
-                        vein.color(),
-                        1.0f
-                ).centerAnchors();
-
-                MarkerOverlay marker = new MarkerOverlay(ColonialResourceRadar.MODID, pos, icon);
-
-                ResourceKey<Level> dimKey = ResourceKey.create(Registries.DIMENSION, vein.dimension());
-                marker.setDimension(dimKey);
-                marker.setLabel(vein.label());
-                marker.setTitle(vein.label() + " vein @ chunk [" + vein.chunkX() + ", " + vein.chunkZ() + "]");
-
-                jmApi.show(marker);
-            } catch (Exception e) {
-                LOGGER.error("[CCI Radar] Failed to show marker for {}", vein.resourceKey(), e);
-            }
+            ResourceKey<Level> dimKey = ResourceKey.create(Registries.DIMENSION, vein.dimension());
+            showMarker(vein, dimKey);
+            showPolygon(vein, dimKey);
         }
 
-        LOGGER.debug("[CCI Radar] Refreshed {} JourneyMap marker(s)", veins.size());
+        LOGGER.debug("[CCI Radar] Refreshed {} JourneyMap overlay(s) ({} marker + polygon pairs)",
+                veins.size() * 2, veins.size());
+    }
+
+    private void showMarker(VeinEntry vein, ResourceKey<Level> dimKey) {
+        try {
+            BlockPos pos = new BlockPos(vein.chunkX() * 16 + 8, 64, vein.chunkZ() * 16 + 8);
+
+            MapImage icon = new MapImage(
+                    ResourceLocation.parse(vein.iconPath()),
+                    0, 0, 8, 8,
+                    vein.color(),
+                    1.0f
+            ).centerAnchors();
+
+            MarkerOverlay marker = new MarkerOverlay(ColonialResourceRadar.MODID, pos, icon);
+            marker.setDimension(dimKey);
+            marker.setLabel(vein.label());
+            marker.setTitle(vein.label() + " vein @ chunk [" + vein.chunkX() + ", " + vein.chunkZ() + "]");
+
+            jmApi.show(marker);
+        } catch (Exception e) {
+            LOGGER.error("[CCI Radar] Failed to show marker for {}", vein.resourceKey(), e);
+        }
+    }
+
+    private void showPolygon(VeinEntry vein, ResourceKey<Level> dimKey) {
+        try {
+            // Chunk boundary polygon: outlines the 16x16 block area of the vein's chunk.
+            // PolygonHelper.createChunkPolygon(chunkX, y, chunkZ)
+            MapPolygon chunkPoly = PolygonHelper.createChunkPolygon(vein.chunkX(), 64, vein.chunkZ());
+
+            ShapeProperties shape = new ShapeProperties()
+                    .setStrokeColor(vein.color())
+                    .setFillColor(vein.color())
+                    .setStrokeOpacity(0.85f)
+                    .setFillOpacity(0.12f)
+                    .setStrokeWidth(2.0f);
+
+            PolygonOverlay polygon = new PolygonOverlay(
+                    ColonialResourceRadar.MODID, dimKey, shape, chunkPoly);
+            polygon.setLabel(vein.label());
+            polygon.setTitle(vein.label() + " vein @ chunk [" + vein.chunkX() + ", " + vein.chunkZ() + "]");
+
+            jmApi.show(polygon);
+        } catch (Exception e) {
+            LOGGER.error("[CCI Radar] Failed to show polygon for {}", vein.resourceKey(), e);
+        }
     }
 
     private void clearMarkers() {

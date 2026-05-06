@@ -22,12 +22,20 @@ public final class CciConfig {
                            obj -> obj instanceof String);
 
     public static final ModConfigSpec.IntValue MAX_RADIUS_CHUNKS =
-            BUILDER.comment("Chunk radius to scan around each player in debug_scan_real (and future auto-scan)")
-                   .defineInRange("max_radius_chunks", 8, 1, 64);
+            BUILDER.comment("Chunk radius scanned around each player (debug_scan_real and background tick scan). Default 32.")
+                   .defineInRange("max_radius_chunks", 32, 1, 64);
 
     public static final ModConfigSpec.IntValue SCAN_INTERVAL_TICKS =
-            BUILDER.comment("Server tick interval for automatic background scanning (0 = disabled, not yet active)")
-                   .defineInRange("scan_interval_ticks", 0, 0, 72000);
+            BUILDER.comment("Server tick interval for automatic background scan around online players (0 = disabled). Default 200 = every 10 s.")
+                   .defineInRange("scan_interval_ticks", 200, 0, 72000);
+
+    public static final ModConfigSpec.BooleanValue LOADED_CHUNKS_ONLY =
+            BUILDER.comment("Scanner only reads already-loaded chunks and never forces chunk generation. Keep true.")
+                   .define("loaded_chunks_only", true);
+
+    public static final ModConfigSpec.BooleanValue PERSIST_KNOWN_VEINS =
+            BUILDER.comment("Discovered vein positions persist across server restarts in world save data. Keep true.")
+                   .define("persist_known_veins", true);
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 
