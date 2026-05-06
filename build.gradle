@@ -152,8 +152,9 @@ dependencies {
     // JourneyMap full mod – local dev runtime only; not a published dependency.
     localRuntime "maven.modrinth:journeymap:${journeymap_mod_version}"
 
-    // Create Ore Excavation – full mod JAR, runtime only.
-    // Integration with COE is deferred to a future isolated package; no COE classes in common code.
+    // Create Ore Excavation – compile-only for soft integration (classes in server/coe/ only);
+    // full mod JAR available at local dev runtime. transitive=false: Create is already localRuntime.
+    compileOnly("maven.modrinth:create-ore-excavation:${coe_version}") { transitive = false }
     localRuntime "maven.modrinth:create-ore-excavation:${coe_version}"
 
     // Create mod (required at runtime by COE).

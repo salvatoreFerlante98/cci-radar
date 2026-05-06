@@ -21,6 +21,14 @@ public final class CciConfig {
                            () -> "",
                            obj -> obj instanceof String);
 
+    public static final ModConfigSpec.IntValue MAX_RADIUS_CHUNKS =
+            BUILDER.comment("Chunk radius to scan around each player in debug_scan_real (and future auto-scan)")
+                   .defineInRange("max_radius_chunks", 8, 1, 64);
+
+    public static final ModConfigSpec.IntValue SCAN_INTERVAL_TICKS =
+            BUILDER.comment("Server tick interval for automatic background scanning (0 = disabled, not yet active)")
+                   .defineInRange("scan_interval_ticks", 0, 0, 72000);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     @SuppressWarnings("unchecked")
