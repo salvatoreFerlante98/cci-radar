@@ -8,35 +8,37 @@ import java.util.Map;
 public final class ResourceRegistry {
     private static final Map<String, ResourceDef> REGISTRY = new LinkedHashMap<>();
 
+    private static final String DOT_ICON = "cci_radar:textures/map/resource/dot.png";
+
     // COE recipe IDs are the data-pack path under data/createoreexcavation/recipe/ore_vein_type/
     public static final ResourceDef COAL = register(new ResourceDef(
-            "coal", "Coal", 0x444444,
-            "minecraft:textures/map/map_icons.png",
+            "coal", "Coal", 0x555555,
+            DOT_ICON,
             List.of("createoreexcavation:ore_vein_type/coal")
     ));
     public static final ResourceDef IRON = register(new ResourceDef(
-            "iron", "Fe", 0xBBBBBB,
-            "minecraft:textures/map/map_icons.png",
+            "iron", "Iron", 0xC8C8C8,
+            DOT_ICON,
             List.of("createoreexcavation:ore_vein_type/iron")
     ));
     public static final ResourceDef COPPER = register(new ResourceDef(
-            "copper", "Cu", 0xB87333,
-            "minecraft:textures/map/map_icons.png",
+            "copper", "Copper", 0xC87941,
+            DOT_ICON,
             List.of("createoreexcavation:ore_vein_type/copper")
     ));
     public static final ResourceDef ZINC = register(new ResourceDef(
-            "zinc", "Zn", 0xD0D0C0,
-            "minecraft:textures/map/map_icons.png",
+            "zinc", "Zinc", 0xADB89E,
+            DOT_ICON,
             List.of("createoreexcavation:ore_vein_type/zinc")
     ));
     public static final ResourceDef REDSTONE = register(new ResourceDef(
-            "redstone", "Red", 0xFF2200,
-            "minecraft:textures/map/map_icons.png",
+            "redstone", "Redstone", 0xFF3300,
+            DOT_ICON,
             List.of("createoreexcavation:ore_vein_type/redstone")
     ));
     public static final ResourceDef GOLD = register(new ResourceDef(
-            "gold", "Au", 0xFFD700,
-            "minecraft:textures/map/map_icons.png",
+            "gold", "Gold", 0xFFCC00,
+            DOT_ICON,
             List.of("createoreexcavation:ore_vein_type/gold")
     ));
 
