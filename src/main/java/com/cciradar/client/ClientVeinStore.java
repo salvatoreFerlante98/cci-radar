@@ -18,6 +18,11 @@ public final class ClientVeinStore {
         changeListeners.forEach(Runnable::run);
     }
 
+    /** Clears the store and notifies listeners, triggering overlay cleanup in the JM plugin. */
+    public static void clear() {
+        update(List.of());
+    }
+
     public static List<VeinEntry> getVeins() {
         return veins;
     }

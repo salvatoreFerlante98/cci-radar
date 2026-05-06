@@ -1,13 +1,9 @@
 {
-  "itemGroup.cci_radar": "Example Mod Tab",
-  "block.cci_radar.example_block": "Example Block",
-  "item.cci_radar.example_item": "Example Item",
-
-  "cci_radar.configuration.title": "Colonial Resource Radar Configs",
-  "cci_radar.configuration.section.cci_radar.common.toml": "Colonial Resource Radar Configs",
-  "cci_radar.configuration.section.cci_radar.common.toml.title": "Colonial Resource Radar Configs",
-  "cci_radar.configuration.items": "Item List",
-  "cci_radar.configuration.logDirtBlock": "Log Dirt Block",
-  "cci_radar.configuration.magicNumberIntroduction": "Magic Number Text",
-  "cci_radar.configuration.magicNumber": "Magic Number"
+  "cci_radar.configuration.title": "Colonial Resource Radar",
+  "cci_radar.configuration.section.cci_radar-server.toml": "Server Config",
+  "cci_radar.configuration.section.cci_radar-server.toml.title": "Colonial Resource Radar — Server Config",
+  "cci_radar.configuration.max_radius_chunks": "Max Scan Radius (chunks)",
+  "cci_radar.configuration.scan_interval_ticks": "Background Scan Interval (ticks)",
+  "cci_radar.configuration.loaded_chunks_only": "Loaded Chunks Only",
+  "cci_radar.configuration.persist_known_veins": "Persist Known Veins"
 }
