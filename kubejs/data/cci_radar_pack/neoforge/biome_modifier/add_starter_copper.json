@@ -1,0 +1,6 @@
+{
+  "type": "neoforge:add_features",
+  "biomes": "#minecraft:is_overworld",
+  "features": "cci_radar_pack:ore_copper_starter",
+  "step": "underground_ores"
+}
