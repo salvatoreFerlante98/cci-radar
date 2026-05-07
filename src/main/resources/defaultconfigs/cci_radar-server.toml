@@ -1,0 +1,70 @@
+#Resource keys available in Tier 0 (basic resources)
+tier0_resources = ["coal", "iron", "copper"]
+#Resource keys available in Tier 1 (advanced resources)
+tier1_resources = ["zinc", "redstone", "gold"]
+#Enable automatic background scanning around players. Requires scan_interval_ticks > 0. Default true.
+auto_scan_enabled = true
+#Enqueue newly loaded chunks for COE vein scanning. Default true.
+scan_on_chunk_load_enabled = true
+#Enable automatic surface hint (pebble) placement from queued jobs. Default true.
+surface_hints_enabled = true
+#Chunk radius for background scanning and debug_scan_real (no-arg). Default 8.
+# Default: 8
+# Range: 1 ~ 64
+max_radius_chunks = 8
+#Tick interval for periodic background radius scan enqueueing (0 = disabled). Default 200 = every 10 s.
+# Default: 200
+# Range: 0 ~ 72000
+scan_interval_ticks = 200
+#Max chunk scan jobs processed per server tick. Default 6.
+# Default: 6
+# Range: 1 ~ 64
+scan_chunks_per_tick = 6
+#Max surface hint placement operations per server tick (0 = hints disabled regardless of surface_hints_enabled). Default 1.
+# Default: 1
+# Range: 0 ~ 16
+hint_placements_per_tick = 1
+#Max pending chunk scan jobs in queue before dropping. Default 8192.
+# Default: 8192
+# Range: 64 ~ 65536
+max_pending_scan_jobs = 8192
+#Max pending surface hint jobs in queue before dropping. Default 512.
+# Default: 512
+# Range: 16 ~ 8192
+max_pending_hint_jobs = 512
+#Scanner only reads already-loaded chunks and never forces chunk generation. Keep true.
+loaded_chunks_only = true
+#Discovered vein positions persist across server restarts in world save data. Keep true.
+persist_known_veins = true
+#Minimum pebble blocks to place per chunk hint job. Default 2.
+# Default: 2
+# Range: 1 ~ 16
+surface_hints_per_chunk_min = 2
+#Maximum pebble blocks to place per chunk hint job. Default 4.
+# Default: 4
+# Range: 1 ~ 16
+surface_hints_per_chunk_max = 4
+#Max block positions tried per hint job when searching for valid surface spots. Default 48.
+# Default: 48
+# Range: 8 ~ 256
+surface_hint_attempts_per_chunk = 48
+#Max failed placement attempts before permanently skipping a chunk/resource (0 = unlimited). Default 3.
+# Default: 3
+# Range: 0 ~ 10
+surface_hint_retry_limit = 3
+#Ticks to wait between retry attempts after 0 valid positions found. Default 600 (30 s).
+# Default: 600
+# Range: 0 ~ 72000
+surface_hint_retry_cooldown_ticks = 600
+#Allow pebbles to replace short_grass, fern, and dead_bush on valid support. Default true.
+surface_hint_replace_thin_vegetation = true
+#Enable periodic backfill pass: enqueues hint jobs for cached veins not yet hinted. Default true.
+surface_hint_backfill_enabled = true
+#Tick interval between hint backfill passes (0 = disabled, independent of scan_interval_ticks). Default 600 = every 30 s.
+# Default: 600
+# Range: 0 ~ 72000
+surface_hint_backfill_interval_ticks = 600
+#Max cached vein entries checked per backfill pass (prevents stall on large vein lists). Default 128.
+# Default: 128
+# Range: 8 ~ 4096
+surface_hint_backfill_max_checks = 128

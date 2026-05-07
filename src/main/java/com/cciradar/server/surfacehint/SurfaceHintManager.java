@@ -19,40 +19,35 @@ import java.util.Set;
 
 /**
  * Server-side service that places pebble surface hints for real mapped COE veins.
- * Covers all tier 0 + tier 1 resources: coal, iron, copper, zinc, redstone, gold.
+ * Covers tier 0 (coal, iron, copper) and tier 1 (zinc, redstone, gold).
  *
  * Two entry points:
- *   placeHintsIfNeeded  — used by the tick worker; respects surface_hints_enabled config.
- *   placeHintsForDebug  — used by debug commands; always runs regardless of config.
+ *   placeHintsIfNeeded  — used by the tick worker; respects surface_hints_enabled.
+ *   placeHintsForDebug  — used by OP debug commands; always runs (ignores surface_hints_enabled).
  *
- * Never called from chunk load events.
+ * Placement parameters are read from CciConfig at runtime so they can be tuned without restart.
+ * Never called from chunk-load events.
  */
 public final class SurfaceHintManager {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    private static final int MIN_HINTS    = 2;
-    private static final int MAX_HINTS    = 4;
-    private static final int MIN_ATTEMPTS = 32;
-
+    // Spec-exact valid support blocks: natural terrain only, no manmade blocks.
     private static final Set<Block> VALID_SUPPORT = Set.of(
-            Blocks.GRASS_BLOCK, Blocks.DIRT, Blocks.COARSE_DIRT, Blocks.ROOTED_DIRT,
-            Blocks.PODZOL, Blocks.MYCELIUM, Blocks.DIRT_PATH,
-            Blocks.STONE, Blocks.SMOOTH_STONE,
-            Blocks.GRAVEL, Blocks.SAND, Blocks.RED_SAND,
-            Blocks.DEEPSLATE, Blocks.TUFF,
-            Blocks.SANDSTONE, Blocks.RED_SANDSTONE,
-            Blocks.ANDESITE, Blocks.DIORITE, Blocks.GRANITE,
-            Blocks.COBBLESTONE
+            Blocks.GRASS_BLOCK,   Blocks.DIRT,         Blocks.COARSE_DIRT,  Blocks.ROOTED_DIRT,
+            Blocks.PODZOL,
+            Blocks.MUD,           Blocks.PACKED_MUD,
+            Blocks.GRAVEL,        Blocks.SAND,          Blocks.RED_SAND,
+            Blocks.STONE,         Blocks.DEEPSLATE,     Blocks.TUFF,
+            Blocks.ANDESITE,      Blocks.DIORITE,       Blocks.GRANITE,
+            Blocks.CALCITE,       Blocks.DRIPSTONE_BLOCK
     );
 
     private SurfaceHintManager() {}
 
     // ── Public API ────────────────────────────────────────────────────────────
 
-    /**
-     * Respects surface_hints_enabled config. Called by the tick worker.
-     */
+    /** Respects surface_hints_enabled config. Called by the tick worker. */
     public static SurfaceHintPlacementResult placeHintsIfNeeded(ServerLevel level, DetectedVein vein) {
         if (!CciConfig.SURFACE_HINTS_ENABLED.get()) {
             return SurfaceHintPlacementResult.ofDisabled(getPebbleBlockId(vein.cciResourceKey()));
@@ -60,9 +55,7 @@ public final class SurfaceHintManager {
         return doPlaceHints(level, vein);
     }
 
-    /**
-     * Always runs regardless of surface_hints_enabled. Called by debug commands.
-     */
+    /** Always runs regardless of surface_hints_enabled. Called by OP debug commands. */
     public static SurfaceHintPlacementResult placeHintsForDebug(ServerLevel level, DetectedVein vein) {
         return doPlaceHints(level, vein);
     }
@@ -85,11 +78,12 @@ public final class SurfaceHintManager {
             return SurfaceHintPlacementResult.ofAlreadyPlaced(pebbleId, prevFailed);
         }
 
-        if (prevFailed >= SurfaceHintWorldData.MAX_FAILED_ATTEMPTS) {
-            return SurfaceHintPlacementResult.ofMaxRetries(pebbleId, prevFailed);
+        int retryLimit = CciConfig.SURFACE_HINT_RETRY_LIMIT.getAsInt();
+        if (retryLimit > 0 && prevFailed >= retryLimit) {
+            return SurfaceHintPlacementResult.ofMaxRetries(pebbleId, prevFailed, retryLimit);
         }
 
-        // Never force-generate chunks — only place in already-loaded chunks
+        // Never force-generate chunks — only place in already-loaded chunks.
         ChunkAccess chunk = level.getChunkSource().getChunkNow(vein.chunkX(), vein.chunkZ());
         if (chunk == null) {
             LOGGER.debug("[CCI Radar] Surface hints deferred — chunk [{},{}] not loaded in {}",
@@ -97,14 +91,17 @@ public final class SurfaceHintManager {
             return SurfaceHintPlacementResult.ofChunkNotLoaded(pebbleId, prevFailed);
         }
 
+        int minHints    = CciConfig.SURFACE_HINTS_PER_CHUNK_MIN.getAsInt();
+        int maxHints    = CciConfig.SURFACE_HINTS_PER_CHUNK_MAX.getAsInt();
+        int maxAttempts = CciConfig.SURFACE_HINT_ATTEMPTS_PER_CHUNK.getAsInt();
+
         long seed   = deriveRngSeed(level.getSeed(), vein);
         Random rng  = new Random(seed);
-        int count   = MIN_HINTS + rng.nextInt(MAX_HINTS - MIN_HINTS + 1);
-        int maxAttempts = Math.max(count * 12, MIN_ATTEMPTS);
+        int target  = minHints + (maxHints > minHints ? rng.nextInt(maxHints - minHints + 1) : 0);
         int placed  = 0;
         int attempts = 0;
 
-        while (attempts < maxAttempts && placed < count) {
+        while (attempts < maxAttempts && placed < target) {
             attempts++;
             int worldX = (vein.chunkX() << 4) + rng.nextInt(16);
             int worldZ = (vein.chunkZ() << 4) + rng.nextInt(16);
@@ -119,16 +116,17 @@ public final class SurfaceHintManager {
             placed++;
         }
 
+        int currentTick = level.getServer().getTickCount();
+
         if (placed > 0) {
             data.markPlaced(vein.dimension(), vein.chunkX(), vein.chunkZ(), resKey);
             LOGGER.debug("[CCI Radar] Placed {} {} pebble(s) at chunk [{},{}] in {} ({} attempts)",
                     placed, resKey, vein.chunkX(), vein.chunkZ(), vein.dimension(), attempts);
         } else {
-            data.markFailed(vein.dimension(), vein.chunkX(), vein.chunkZ(), resKey);
-            int newTotal = prevFailed + 1;
+            data.markFailed(vein.dimension(), vein.chunkX(), vein.chunkZ(), resKey, currentTick);
             LOGGER.debug("[CCI Radar] No valid positions for {} at chunk [{},{}] in {} after {} attempts (fail {}/{})",
                     resKey, vein.chunkX(), vein.chunkZ(), vein.dimension(),
-                    attempts, newTotal, SurfaceHintWorldData.MAX_FAILED_ATTEMPTS);
+                    attempts, prevFailed + 1, retryLimit > 0 ? retryLimit : "unlimited");
         }
 
         return SurfaceHintPlacementResult.ofSuccess(pebbleId, prevFailed, attempts, placed);
@@ -147,12 +145,11 @@ public final class SurfaceHintManager {
 
     private static boolean isReplaceableAtSurface(BlockState state) {
         if (state.isAir()) return true;
+        if (!CciConfig.SURFACE_HINT_REPLACE_THIN_VEGETATION.get()) return false;
         Block b = state.getBlock();
         return b == Blocks.SHORT_GRASS
-                || b == Blocks.TALL_GRASS
                 || b == Blocks.FERN
-                || b == Blocks.DEAD_BUSH
-                || b == Blocks.MOSS_CARPET;
+                || b == Blocks.DEAD_BUSH;
     }
 
     private static BlockState getPebbleState(String resourceKey) {

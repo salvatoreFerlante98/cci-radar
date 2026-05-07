@@ -16,9 +16,9 @@ public record SurfaceHintPlacementResult(
         return new SurfaceHintPlacementResult(pebbleId, true, prevFailed, 0, 0, "already placed");
     }
 
-    public static SurfaceHintPlacementResult ofMaxRetries(String pebbleId, int prevFailed) {
+    public static SurfaceHintPlacementResult ofMaxRetries(String pebbleId, int prevFailed, int retryLimit) {
         return new SurfaceHintPlacementResult(pebbleId, false, prevFailed, 0, 0,
-                "max retries exceeded (" + prevFailed + "/" + SurfaceHintWorldData.MAX_FAILED_ATTEMPTS + ")");
+                "max retries exceeded (" + prevFailed + "/" + retryLimit + ")");
     }
 
     public static SurfaceHintPlacementResult ofChunkNotLoaded(String pebbleId, int prevFailed) {

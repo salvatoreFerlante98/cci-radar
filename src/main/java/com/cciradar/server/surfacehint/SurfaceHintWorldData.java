@@ -1,5 +1,6 @@
 package com.cciradar.server.surfacehint;
 
+import com.cciradar.config.CciConfig;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -16,22 +17,22 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Persistent record of surface-hint placement state.
+ * Persistent record of surface-hint placement state per (dim, cx, cz, resourceKey).
  *
- * Two tracking sets per (dim, cx, cz, resourceKey) key:
- *   placedKeys    — at least one pebble was successfully placed
- *   failedAttempts — count of attempts where chunk was loaded but 0 positions found
+ * placedKeys        — at least one pebble was successfully placed; never retried.
+ * failedAttempts    — count of attempts where chunk was loaded but 0 positions found.
+ * lastAttemptTick   — server tick of the most recent failed attempt; drives retry cooldown.
  *
- * MAX_FAILED_ATTEMPTS controls how many times we retry a chunk with no valid
- * surface positions before giving up permanently.
+ * Retry limit and cooldown are read from CciConfig at runtime, so they can be tuned
+ * without clearing world data.
  */
 public class SurfaceHintWorldData extends SavedData {
 
     public static final String DATA_KEY = "cci_radar_surface_hints";
-    public static final int    MAX_FAILED_ATTEMPTS = 3;
 
-    private final Set<String>         placedKeys     = new HashSet<>();
-    private final Map<String, Integer> failedAttempts = new HashMap<>();
+    private final Set<String>          placedKeys      = new HashSet<>();
+    private final Map<String, Integer> failedAttempts  = new HashMap<>();
+    private final Map<String, Integer> lastAttemptTick = new HashMap<>();
 
     private SurfaceHintWorldData() {}
 
@@ -55,13 +56,21 @@ public class SurfaceHintWorldData extends SavedData {
         return failedAttempts.getOrDefault(makeKey(dim, cx, cz, resourceKey), 0);
     }
 
+    /** Returns the server tick of the last failed attempt, or -1 if never failed. */
+    public int getLastAttemptTick(ResourceLocation dim, int cx, int cz, String resourceKey) {
+        return lastAttemptTick.getOrDefault(makeKey(dim, cx, cz, resourceKey), -1);
+    }
+
     /**
-     * Returns true if placement should be skipped entirely:
-     * either already placed successfully, or exceeded the failed-attempt limit.
+     * Returns true if placement should be skipped permanently:
+     * already placed, or failed attempts >= SURFACE_HINT_RETRY_LIMIT.
+     * Does NOT check cooldown; cooldown is handled at enqueue time.
      */
     public boolean shouldSkip(ResourceLocation dim, int cx, int cz, String resourceKey) {
         String key = makeKey(dim, cx, cz, resourceKey);
-        return placedKeys.contains(key) || failedAttempts.getOrDefault(key, 0) >= MAX_FAILED_ATTEMPTS;
+        if (placedKeys.contains(key)) return true;
+        int retryLimit = CciConfig.SURFACE_HINT_RETRY_LIMIT.getAsInt();
+        return retryLimit > 0 && failedAttempts.getOrDefault(key, 0) >= retryLimit;
     }
 
     // ── Mutations ─────────────────────────────────────────────────────────────
@@ -71,10 +80,11 @@ public class SurfaceHintWorldData extends SavedData {
         setDirty();
     }
 
-    /** Increments the failed-attempt counter for this chunk/resource. */
-    public void markFailed(ResourceLocation dim, int cx, int cz, String resourceKey) {
+    /** Increments failed-attempt counter and records the server tick of this attempt. */
+    public void markFailed(ResourceLocation dim, int cx, int cz, String resourceKey, int currentTick) {
         String key = makeKey(dim, cx, cz, resourceKey);
         failedAttempts.merge(key, 1, Integer::sum);
+        lastAttemptTick.put(key, currentTick);
         setDirty();
     }
 
@@ -97,6 +107,11 @@ public class SurfaceHintWorldData extends SavedData {
             data.failedAttempts.put(key, failed.getInt(key));
         }
 
+        CompoundTag ticks = tag.getCompound("lastAttemptTick");
+        for (String key : ticks.getAllKeys()) {
+            data.lastAttemptTick.put(key, ticks.getInt(key));
+        }
+
         return data;
     }
 
@@ -113,6 +128,12 @@ public class SurfaceHintWorldData extends SavedData {
             failed.putInt(e.getKey(), e.getValue());
         }
         tag.put("failed", failed);
+
+        CompoundTag ticks = new CompoundTag();
+        for (Map.Entry<String, Integer> e : lastAttemptTick.entrySet()) {
+            ticks.putInt(e.getKey(), e.getValue());
+        }
+        tag.put("lastAttemptTick", ticks);
 
         return tag;
     }
