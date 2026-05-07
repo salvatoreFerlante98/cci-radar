@@ -3,12 +3,16 @@ package com.cciradar.command;
 import com.cciradar.config.CciConfig;
 import com.cciradar.data.ResourceDef;
 import com.cciradar.data.ResourceRegistry;
+import com.cciradar.server.CciScanQueue;
 import com.cciradar.server.PlayerProgressData;
 import com.cciradar.server.VeinSyncManager;
 import com.cciradar.server.WorldVeinData;
 import com.cciradar.server.coe.CoeVeinAdapter;
 import com.cciradar.server.coe.CoeVeinScanner;
 import com.cciradar.server.coe.DetectedVein;
+import com.cciradar.server.surfacehint.SurfaceHintManager;
+import com.cciradar.server.surfacehint.SurfaceHintPlacementResult;
+import com.cciradar.server.surfacehint.SurfaceHintWorldData;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -16,6 +20,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.core.SectionPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -77,6 +82,21 @@ public final class CciCommands {
                                 .requires(src -> src.hasPermission(2))
                                 .executes(CciCommands::debugVisibleVeins)
                         )
+                        .then(Commands.literal("debug_place_hints")
+                                .requires(src -> src.hasPermission(2))
+                                .executes(CciCommands::debugPlaceHints)
+                        )
+                        .then(Commands.literal("debug_queues")
+                                .requires(src -> src.hasPermission(2))
+                                .executes(CciCommands::debugQueues)
+                        )
+                        .then(Commands.literal("debug_enqueue_nearby")
+                                .requires(src -> src.hasPermission(2))
+                                .executes(ctx -> debugEnqueueNearby(ctx, CciConfig.MAX_RADIUS_CHUNKS.getAsInt()))
+                                .then(Commands.argument("radius_chunks", IntegerArgumentType.integer(1, 64))
+                                        .executes(ctx -> debugEnqueueNearby(ctx, IntegerArgumentType.getInteger(ctx, "radius_chunks")))
+                                )
+                        )
         );
     }
 
@@ -129,11 +149,6 @@ public final class CciCommands {
 
     // ── resync ────────────────────────────────────────────────────────────────
 
-    /**
-     * Re-sends the player's currently visible cached veins without rescanning.
-     * Useful after JourneyMap reload or client desync.
-     * No permission requirement — each player can resync their own markers.
-     */
     private static int resync(CommandContext<CommandSourceStack> ctx)
             throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
@@ -163,11 +178,31 @@ public final class CciCommands {
         ServerLevel level = player.serverLevel();
         MinecraftServer server = player.server;
 
+        int side = 2 * Math.min(requestedRadius, 64) + 1;
+        int candidateCount = side * side;
+
+        if (requestedRadius > 16) {
+            ctx.getSource().sendSuccess(() -> Component.literal(
+                    "[CCI Radar] WARNING: radius=" + requestedRadius
+                            + " scans up to " + candidateCount + " candidate chunks."
+                            + " Large radii may cause a brief server hitch."
+            ), false);
+        }
+
         CoeVeinScanner.ScanResult result = CoeVeinScanner.scan(level, player.blockPosition(), requestedRadius);
 
         WorldVeinData worldData = WorldVeinData.get(server);
-        int added = worldData.addAllIfAbsent(result.detectedVeins());
+        List<DetectedVein> newVeins = worldData.addAllIfAbsent(result.detectedVeins());
+        int added = newVeins.size();
         int cachedTotal = worldData.getAll().size();
+
+        // debug_scan_real is an explicit OP command — place hints for newly found veins
+        // regardless of surface_hints_enabled (debug intent)
+        for (DetectedVein vein : newVeins) {
+            if (vein.cciResourceKey() != null) {
+                SurfaceHintManager.placeHintsForDebug(level, vein);
+            }
+        }
 
         VeinSyncManager.syncToPlayer(server, player);
         int visible = VeinSyncManager.countVisibleForPlayer(server, player);
@@ -230,6 +265,11 @@ public final class CciCommands {
                 PlayerProgressData.get(server).getUnlockedTiers(player.getUUID()).contains(tier);
         boolean markerVisible = vein.cciResourceKey() != null && tierUnlocked;
 
+        // debug_coe_chunk is an explicit OP command — always try to place hints
+        if (added && vein.cciResourceKey() != null) {
+            SurfaceHintManager.placeHintsForDebug(level, vein);
+        }
+
         if (markerVisible) {
             VeinSyncManager.syncToPlayer(server, player);
         }
@@ -238,6 +278,8 @@ public final class CciCommands {
         String tierStr = tier >= 0 ? String.valueOf(tier) : "unknown";
         String addedStr = added ? "yes (newly added)" : "already present";
         String markerId = stableMarkerId(vein.dimension(), vein.chunkX(), vein.chunkZ());
+        boolean hintsPlaced = vein.cciResourceKey() != null
+                && SurfaceHintWorldData.get(server).hasPlaced(vein.dimension(), vein.chunkX(), vein.chunkZ(), vein.cciResourceKey());
 
         ctx.getSource().sendSuccess(() -> Component.literal(
                 "[CCI Radar] debug_coe_chunk:"
@@ -252,6 +294,7 @@ public final class CciCommands {
                         + "\n  sync sent: " + (markerVisible ? "yes" : "no (tier locked)")
                         + "\n  marker visible: " + (markerVisible ? "yes" : "no")
                         + "\n  marker id: " + markerId
+                        + "\n  surface_hints_placed: " + (hintsPlaced ? "yes" : "no")
         ), false);
 
         return 1;
@@ -309,9 +352,122 @@ public final class CciCommands {
         return visible.size();
     }
 
+    // ── debug_place_hints ────────────────────────────────────────────────────
+
+    private static int debugPlaceHints(CommandContext<CommandSourceStack> ctx)
+            throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        ServerLevel level   = player.serverLevel();
+        MinecraftServer server = player.server;
+
+        int cx = player.blockPosition().getX() >> 4;
+        int cz = player.blockPosition().getZ() >> 4;
+        ResourceLocation dim = level.dimension().location();
+
+        Optional<DetectedVein> veinOpt = WorldVeinData.get(server).getAll().stream()
+                .filter(v -> v.chunkX() == cx && v.chunkZ() == cz && v.dimension().equals(dim))
+                .findFirst();
+
+        if (veinOpt.isEmpty()) {
+            ctx.getSource().sendSuccess(() -> Component.literal(
+                    "[CCI Radar] debug_place_hints:"
+                            + "\n  dim: " + dim
+                            + "\n  chunk: [" + cx + ", " + cz + "]"
+                            + "\n  cached vein: none"
+                            + "\n  Tip: run /cci_radar debug_coe_chunk to add this chunk to cache"
+            ), false);
+            return 0;
+        }
+
+        DetectedVein vein = veinOpt.get();
+        String resKey = vein.cciResourceKey() != null ? vein.cciResourceKey() : "(unmapped)";
+        // Always runs — debug command bypasses surface_hints_enabled config
+        SurfaceHintPlacementResult result = SurfaceHintManager.placeHintsForDebug(level, vein);
+
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "[CCI Radar] debug_place_hints:"
+                        + "\n  dim: " + dim
+                        + "\n  chunk: [" + cx + ", " + cz + "]"
+                        + "\n  resource: " + resKey
+                        + "\n  pebble_block: " + result.pebbleBlockId()
+                        + "\n  already_placed: " + (result.alreadyPlaced() ? "yes" : "no")
+                        + "\n  previous_failed_attempts: " + result.previousFailedAttempts() + "/" + SurfaceHintWorldData.MAX_FAILED_ATTEMPTS
+                        + "\n  attempted_positions: " + result.attempted()
+                        + "\n  placed: " + result.placed()
+                        + "\n  reason: " + result.reason()
+        ), false);
+
+        return result.placed();
+    }
+
+    // ── debug_queues ──────────────────────────────────────────────────────────
+
+    private static int debugQueues(CommandContext<CommandSourceStack> ctx) {
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "[CCI Radar] debug_queues:"
+                        + "\n  auto_scan_enabled:              " + CciConfig.AUTO_SCAN_ENABLED.get()
+                        + "\n  scan_on_chunk_load_enabled:     " + CciConfig.SCAN_ON_CHUNK_LOAD_ENABLED.get()
+                        + "\n  surface_hints_enabled:          " + CciConfig.SURFACE_HINTS_ENABLED.get()
+                        + "\n  pending_scan_jobs:              " + CciScanQueue.pendingScanJobs()
+                        + "\n  pending_hint_jobs:              " + CciScanQueue.pendingHintJobs()
+                        + "\n  scan_chunks_per_tick:           " + CciConfig.SCAN_CHUNKS_PER_TICK.getAsInt()
+                        + "\n  hint_placements_per_tick:       " + CciConfig.HINT_PLACEMENTS_PER_TICK.getAsInt()
+                        + "\n  last_tick_scan_jobs_processed:  " + CciScanQueue.lastProcessedScans()
+                        + "\n  total_scan_jobs_enqueued:       " + CciScanQueue.totalEnqueuedCount()
+                        + "\n  total_scan_jobs_processed:      " + CciScanQueue.totalProcessedCount()
+                        + "\n  total_scan_jobs_skipped_unloaded: " + CciScanQueue.totalSkippedUnloaded()
+                        + "\n  total_raw_coe_veins_found:      " + CciScanQueue.totalRawCoeVeinsFound()
+                        + "\n  total_mapped_veins_added:       " + CciScanQueue.totalMappedVeinsAdded()
+                        + "\n  total_unmapped_veins:           " + CciScanQueue.totalUnmappedVeins()
+                        + "\n  total_scan_jobs_dropped:        " + CciScanQueue.totalDroppedScans()
+        ), false);
+        return 1;
+    }
+
+    // ── debug_enqueue_nearby ──────────────────────────────────────────────────
+
+    private static int debugEnqueueNearby(CommandContext<CommandSourceStack> ctx, int radius)
+            throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        ServerLevel level = player.serverLevel();
+
+        int centerCX = SectionPos.blockToSectionCoord(player.blockPosition().getX());
+        int centerCZ = SectionPos.blockToSectionCoord(player.blockPosition().getZ());
+
+        int found = 0;
+        int added = 0;
+
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                // Only enqueue chunks that are currently loaded
+                LevelChunk chunk = level.getChunkSource().getChunkNow(centerCX + dx, centerCZ + dz);
+                if (chunk == null) continue;
+                found++;
+                long before = CciScanQueue.totalEnqueuedCount();
+                CciScanQueue.enqueueScan(level.dimension().location(), centerCX + dx, centerCZ + dz);
+                if (CciScanQueue.totalEnqueuedCount() > before) added++;
+            }
+        }
+
+        final int skipped = found - added;
+        final int queueAfter = CciScanQueue.pendingScanJobs();
+        final int finalFound = found;
+        final int finalAdded = added;
+
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "[CCI Radar] debug_enqueue_nearby:"
+                        + "\n  radius: " + radius
+                        + "\n  loaded_chunks_found: " + finalFound
+                        + "\n  jobs_added_to_queue: " + finalAdded
+                        + "\n  jobs_skipped_already_pending: " + skipped
+                        + "\n  queue_pending_after: " + queueAfter
+                        + "\n  Tip: run /cci_radar debug_queues after a few seconds to see processing progress"
+        ), false);
+        return added;
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    /** Returns the tier for a CCI resource key by checking config lists, or -1 if unknown. */
     static int getTierForResourceKey(String cciKey) {
         if (cciKey == null) return -1;
         for (int tier = 0; tier <= 1; tier++) {
@@ -320,10 +476,6 @@ public final class CciCommands {
         return -1;
     }
 
-    /**
-     * Stable human-readable marker identifier for a vein position.
-     * Used in debug output; corresponds to the id used in CciJourneyMapPlugin.
-     */
     static String stableMarkerId(net.minecraft.resources.ResourceLocation dim, int cx, int cz) {
         return "cci_vein:" + dim + ":" + cx + "," + cz;
     }

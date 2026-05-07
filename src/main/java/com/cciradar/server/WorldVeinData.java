@@ -54,12 +54,12 @@ public class WorldVeinData extends SavedData {
     }
 
     /**
-     * Adds all veins not already present. Returns the count of newly added veins.
+     * Adds all veins not already present. Returns the list of newly added veins.
      */
-    public int addAllIfAbsent(List<DetectedVein> newVeins) {
-        int added = 0;
+    public List<DetectedVein> addAllIfAbsent(List<DetectedVein> newVeins) {
+        List<DetectedVein> added = new ArrayList<>();
         for (DetectedVein vein : newVeins) {
-            if (addIfAbsent(vein)) added++;
+            if (addIfAbsent(vein)) added.add(vein);
         }
         return added;
     }

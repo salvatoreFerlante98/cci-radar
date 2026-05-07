@@ -1,4 +1,10 @@
 {
+  "block.cci_radar.coal_pebbles": "Coal Pebbles",
+  "block.cci_radar.iron_pebbles": "Iron Pebbles",
+  "block.cci_radar.copper_pebbles": "Copper Pebbles",
+  "block.cci_radar.zinc_pebbles": "Zinc Pebbles",
+  "block.cci_radar.redstone_pebbles": "Redstone Pebbles",
+  "block.cci_radar.gold_pebbles": "Gold Pebbles",
   "cci_radar.configuration.title": "Colonial Resource Radar",
   "cci_radar.configuration.section.cci_radar-server.toml": "Server Config",
   "cci_radar.configuration.section.cci_radar-server.toml.title": "Colonial Resource Radar — Server Config",

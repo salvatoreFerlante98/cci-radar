@@ -1,7 +1,10 @@
 package com.cciradar;
 
+import com.cciradar.block.CciBlocks;
+import com.cciradar.block.CciItems;
 import com.cciradar.command.CciCommands;
 import com.cciradar.config.CciConfig;
+import com.cciradar.server.CciScanQueue;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
@@ -23,6 +26,9 @@ public class ColonialResourceRadar {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public ColonialResourceRadar(IEventBus modEventBus, ModContainer modContainer) {
+        CciBlocks.BLOCKS.register(modEventBus);
+        CciItems.ITEMS.register(modEventBus);
+
         modEventBus.addListener(this::commonSetup);
 
         NeoForge.EVENT_BUS.register(this);
@@ -37,11 +43,17 @@ public class ColonialResourceRadar {
 
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
-        LOGGER.info("[CCI Radar] Server starting — effective config:");
-        LOGGER.info("[CCI Radar]   max_radius_chunks    = {}", CciConfig.MAX_RADIUS_CHUNKS.getAsInt());
-        LOGGER.info("[CCI Radar]   scan_interval_ticks  = {}", CciConfig.SCAN_INTERVAL_TICKS.getAsInt());
-        LOGGER.info("[CCI Radar]   loaded_chunks_only   = {}", CciConfig.LOADED_CHUNKS_ONLY.get());
-        LOGGER.info("[CCI Radar]   persist_known_veins  = {}", CciConfig.PERSIST_KNOWN_VEINS.get());
+        CciScanQueue.reset();
+        LOGGER.info("[CCI Radar] Server starting — effective safety config:");
+        LOGGER.info("[CCI Radar]   auto_scan_enabled         = {}", CciConfig.AUTO_SCAN_ENABLED.get());
+        LOGGER.info("[CCI Radar]   scan_on_chunk_load_enabled = {}", CciConfig.SCAN_ON_CHUNK_LOAD_ENABLED.get());
+        LOGGER.info("[CCI Radar]   surface_hints_enabled      = {}", CciConfig.SURFACE_HINTS_ENABLED.get());
+        LOGGER.info("[CCI Radar]   max_radius_chunks          = {}", CciConfig.MAX_RADIUS_CHUNKS.getAsInt());
+        LOGGER.info("[CCI Radar]   scan_interval_ticks        = {}", CciConfig.SCAN_INTERVAL_TICKS.getAsInt());
+        LOGGER.info("[CCI Radar]   scan_chunks_per_tick       = {}", CciConfig.SCAN_CHUNKS_PER_TICK.getAsInt());
+        LOGGER.info("[CCI Radar]   hint_placements_per_tick   = {}", CciConfig.HINT_PLACEMENTS_PER_TICK.getAsInt());
+        LOGGER.info("[CCI Radar]   loaded_chunks_only         = {}", CciConfig.LOADED_CHUNKS_ONLY.get());
+        LOGGER.info("[CCI Radar]   persist_known_veins        = {}", CciConfig.PERSIST_KNOWN_VEINS.get());
     }
 
     @SubscribeEvent
