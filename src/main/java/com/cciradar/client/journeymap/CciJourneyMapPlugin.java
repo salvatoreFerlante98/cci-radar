@@ -269,7 +269,9 @@ public class CciJourneyMapPlugin implements IClientPlugin {
 
     /** Small dot placed at a random block inside the cluster. No label. */
     private MarkerOverlay buildDotMarker(ResourceCluster cluster, ResourceKey<Level> dimKey, BlockPos pos) {
-        ResourceLocation texLoc = ResourceLocation.parse(cluster.iconPath());
+        // Use the generic circle dot for small markers — at 7 px the material shape is invisible,
+        // only color distinguishes resource type at dot scale.
+        ResourceLocation texLoc = ResourceLocation.parse("cci_radar:textures/map/resource/dot.png");
         MapImage icon = new MapImage(texLoc, 0, 0, 16, 16, cluster.color(), DOT_OPACITY)
                 .setDisplayWidth(DOT_DISPLAY_SIZE)
                 .setDisplayHeight(DOT_DISPLAY_SIZE)
