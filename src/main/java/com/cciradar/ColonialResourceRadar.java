@@ -5,6 +5,7 @@ import com.cciradar.block.CciItems;
 import com.cciradar.command.CciCommands;
 import com.cciradar.config.CciConfig;
 import com.cciradar.server.CciScanQueue;
+import com.cciradar.server.cci.CciCoreVeinBridge;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
@@ -18,6 +19,7 @@ import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
+import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 
 @Mod(ColonialResourceRadar.MODID)
 public class ColonialResourceRadar {
@@ -44,6 +46,12 @@ public class ColonialResourceRadar {
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
         CciScanQueue.reset();
+        // Initialize cci_core bridge: capture server reference and register the
+        // CciVeinEvents listener (idempotent). Provider-first mode activates as soon as
+        // any authoritative provider (e.g. cci_world) registers itself with cci_core.
+        CciCoreVeinBridge.onServerStarting(event.getServer());
+        LOGGER.info("[CCI Radar] cci_core bridge initialized. Provider mode active = {} (sourceId = {})",
+                CciCoreVeinBridge.isProviderModeActive(), CciCoreVeinBridge.activeSourceId());
         LOGGER.info("[CCI Radar] Server starting — effective safety config:");
         LOGGER.info("[CCI Radar]   auto_scan_enabled         = {}", CciConfig.AUTO_SCAN_ENABLED.get());
         LOGGER.info("[CCI Radar]   scan_on_chunk_load_enabled = {}", CciConfig.SCAN_ON_CHUNK_LOAD_ENABLED.get());
@@ -59,5 +67,10 @@ public class ColonialResourceRadar {
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
         CciCommands.register(event.getDispatcher());
+    }
+
+    @SubscribeEvent
+    public void onServerStopping(ServerStoppingEvent event) {
+        CciCoreVeinBridge.onServerStopping(event.getServer());
     }
 }

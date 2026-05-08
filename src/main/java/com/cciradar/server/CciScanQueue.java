@@ -1,6 +1,7 @@
 package com.cciradar.server;
 
 import com.cciradar.config.CciConfig;
+import com.cciradar.server.cci.CciCoreVeinBridge;
 import com.cciradar.server.coe.CoeVeinAdapter;
 import com.cciradar.server.coe.DetectedVein;
 import com.cciradar.server.surfacehint.SurfaceHintManager;
@@ -181,11 +182,42 @@ public final class CciScanQueue {
                 continue;
             }
 
-            Optional<DetectedVein> result = CoeVeinAdapter.detect(level, chunk);
-            if (result.isEmpty()) continue;
-
-            DetectedVein vein = result.get();
-            totalRawCoeVeinsFound++;
+            // ── Provider-first scan (cci_core) ───────────────────────────
+            // If an authoritative cci_core provider is registered (e.g. cci_world),
+            // we trust it exclusively for this chunk and never read COE for it.
+            DetectedVein vein;
+            if (CciCoreVeinBridge.isProviderModeActive()) {
+                CciCoreVeinBridge.ProviderScan ps = CciCoreVeinBridge.lookup(level, job.cx(), job.cz());
+                switch (ps.outcome()) {
+                    case VEIN -> {
+                        vein = ps.detected();
+                        totalRawCoeVeinsFound++; // counted as a "found vein" in stats
+                    }
+                    case NO_VEIN -> {
+                        // Authoritative says: no vein here → drop any stale legacy cache entry.
+                        WorldVeinData.get(server).removeAt(job.dim(), job.cx(), job.cz());
+                        hasPendingSync = true;
+                        continue;
+                    }
+                    case SKIP -> {
+                        // PENDING / UNKNOWN / unmapped VEIN → skip, do NOT read COE legacy.
+                        continue;
+                    }
+                    case NO_PROVIDER -> {
+                        // Provider disappeared between check and lookup; fall through to COE.
+                        Optional<DetectedVein> result = CoeVeinAdapter.detect(level, chunk);
+                        if (result.isEmpty()) continue;
+                        vein = result.get();
+                        totalRawCoeVeinsFound++;
+                    }
+                    default -> { continue; }
+                }
+            } else {
+                Optional<DetectedVein> result = CoeVeinAdapter.detect(level, chunk);
+                if (result.isEmpty()) continue;
+                vein = result.get();
+                totalRawCoeVeinsFound++;
+            }
 
             if (vein.cciResourceKey() == null) {
                 totalUnmappedVeins++;

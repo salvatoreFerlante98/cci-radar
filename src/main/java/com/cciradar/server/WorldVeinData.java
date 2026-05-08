@@ -64,6 +64,28 @@ public class WorldVeinData extends SavedData {
         return added;
     }
 
+    /**
+     * Removes any cached vein recorded for the given dimension+chunk position.
+     * Returns true if a vein was actually removed.
+     *
+     * Used by the cci_core provider integration to handle authoritative NO_VEIN
+     * snapshots: if cci_world declares a chunk has no vein, any stale legacy
+     * cache entry must be dropped so it does not appear on the map.
+     */
+    public boolean removeAt(ResourceLocation dim, int cx, int cz) {
+        String key = chunkKey(dim, cx, cz);
+        if (!knownChunkKeys.remove(key)) return false;
+        boolean removed = veins.removeIf(v ->
+                v.dimension().equals(dim) && v.chunkX() == cx && v.chunkZ() == cz);
+        if (removed) setDirty();
+        return removed;
+    }
+
+    /** True if a vein is cached for this dimension+chunk. */
+    public boolean hasAt(ResourceLocation dim, int cx, int cz) {
+        return knownChunkKeys.contains(chunkKey(dim, cx, cz));
+    }
+
     public void replaceAll(List<DetectedVein> newVeins) {
         veins.clear();
         knownChunkKeys.clear();

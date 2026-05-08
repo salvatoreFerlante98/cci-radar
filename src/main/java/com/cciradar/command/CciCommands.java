@@ -7,6 +7,7 @@ import com.cciradar.server.CciScanQueue;
 import com.cciradar.server.PlayerProgressData;
 import com.cciradar.server.VeinSyncManager;
 import com.cciradar.server.WorldVeinData;
+import com.cciradar.server.cci.CciCoreVeinBridge;
 import com.cciradar.server.coe.CoeVeinAdapter;
 import com.cciradar.server.coe.CoeVeinScanner;
 import com.cciradar.server.coe.DetectedVein;
@@ -215,10 +216,71 @@ public final class CciCommands {
             ), false);
         }
 
-        CoeVeinScanner.ScanResult result = CoeVeinScanner.scan(level, player.blockPosition(), requestedRadius);
+        // ── Provider-first scan path ─────────────────────────────────────
+        boolean providerMode = CciCoreVeinBridge.isProviderModeActive();
+        String providerSourceId = CciCoreVeinBridge.activeSourceId();
+        int providerVeinCount = 0;
+        int providerNoVeinCount = 0;
+        int providerUnknownCount = 0; // PENDING + UNKNOWN + SKIP
+        boolean legacyFallbackUsed = false;
 
         WorldVeinData worldData = WorldVeinData.get(server);
-        List<DetectedVein> newVeins = worldData.addAllIfAbsent(result.detectedVeins());
+        CoeVeinScanner.ScanResult result;
+        List<DetectedVein> newVeins;
+
+        if (providerMode) {
+            // Iterate the same chunk window as CoeVeinScanner but ask the authoritative provider.
+            int effectiveRadius = Math.min(requestedRadius, CciConfig.MAX_RADIUS_CHUNKS.getAsInt());
+            int centerCX = SectionPos.blockToSectionCoord(player.blockPosition().getX());
+            int centerCZ = SectionPos.blockToSectionCoord(player.blockPosition().getZ());
+            List<DetectedVein> providerDetected = new java.util.ArrayList<>();
+            int loaded = 0, unloaded = 0;
+            int eSide = 2 * effectiveRadius + 1;
+            int candidate = eSide * eSide;
+            for (int dx = -effectiveRadius; dx <= effectiveRadius; dx++) {
+                for (int dz = -effectiveRadius; dz <= effectiveRadius; dz++) {
+                    int cx = centerCX + dx;
+                    int cz = centerCZ + dz;
+                    if (level.getChunkSource().getChunkNow(cx, cz) == null) {
+                        unloaded++;
+                        continue;
+                    }
+                    loaded++;
+                    CciCoreVeinBridge.ProviderScan ps = CciCoreVeinBridge.lookup(level, cx, cz);
+                    switch (ps.outcome()) {
+                        case VEIN -> {
+                            providerVeinCount++;
+                            providerDetected.add(ps.detected());
+                        }
+                        case NO_VEIN -> {
+                            providerNoVeinCount++;
+                            // Drop any stale legacy cache entry for this chunk.
+                            worldData.removeAt(level.dimension().location(), cx, cz);
+                        }
+                        case SKIP -> providerUnknownCount++;
+                        case NO_PROVIDER -> {
+                            // Provider vanished mid-scan; just skip in this loop. Real fallback is below.
+                            providerUnknownCount++;
+                        }
+                    }
+                }
+            }
+            result = new CoeVeinScanner.ScanResult(
+                    level.dimension().location(),
+                    centerCX, centerCZ,
+                    requestedRadius, effectiveRadius,
+                    candidate, loaded, unloaded,
+                    providerDetected.size(), providerDetected.size(), 0,
+                    java.util.Collections.emptyList(),
+                    java.util.List.copyOf(providerDetected)
+            );
+            newVeins = worldData.addAllIfAbsent(providerDetected);
+        } else {
+            legacyFallbackUsed = true;
+            result = CoeVeinScanner.scan(level, player.blockPosition(), requestedRadius);
+            newVeins = worldData.addAllIfAbsent(result.detectedVeins());
+        }
+
         int added = newVeins.size();
         int cachedTotal = worldData.getAll().size();
 
@@ -256,6 +318,12 @@ public final class CciCommands {
 
         StringBuilder sb = new StringBuilder();
         sb.append("[CCI Radar] debug_scan_real:");
+        sb.append("\n  provider_mode_active: ").append(providerMode ? "yes" : "no");
+        sb.append("\n  provider_sourceId: ").append(providerSourceId);
+        sb.append("\n  provider_VEIN_count: ").append(providerVeinCount);
+        sb.append("\n  provider_NO_VEIN_count: ").append(providerNoVeinCount);
+        sb.append("\n  provider_UNKNOWN_count: ").append(providerUnknownCount);
+        sb.append("\n  legacy_fallback_used: ").append(legacyFallbackUsed ? "yes" : "no");
         sb.append("\n  dim: ").append(result.dimension());
         sb.append("\n  player_chunk: [").append(result.centerCX()).append(", ").append(result.centerCZ()).append("]");
         sb.append("\n  requested_radius_chunks: ").append(result.requestedRadius());
@@ -622,8 +690,14 @@ public final class CciCommands {
             }
         }
 
+        boolean providerMode = CciCoreVeinBridge.isProviderModeActive();
+        String sourceLine = providerMode
+                ? "cci_core_provider: " + CciCoreVeinBridge.activeSourceId()
+                : "legacy_coe";
+
         StringBuilder sb = new StringBuilder();
         sb.append("[CCI Radar] debug_resource_distribution:");
+        sb.append("\n  source: ").append(sourceLine);
         sb.append("\n  current_dim: ").append(player.serverLevel().dimension().location());
         sb.append("\n  player: ").append(player.getName().getString());
         sb.append("\n  unlocked_tiers: ").append(unlocked.isEmpty() ? "none" : unlocked.toString());

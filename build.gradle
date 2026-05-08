@@ -144,7 +144,21 @@ configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
+// ── cci_core: real local dependency for vein-provider integration ────────
+// Required at compile and runtime. The build MUST fail loudly if this jar is missing.
+def cciCoreJar = file("libs/cci_core-1.0.0.jar")
+if (!cciCoreJar.exists()) {
+    throw new GradleException(
+            "Missing required dependency: ${cciCoreJar.absolutePath}\n" +
+                    "cci_core is a hard dependency of cci_radar. Place the cci_core jar at libs/cci_core-1.0.0.jar."
+    )
+}
+
 dependencies {
+    // cci_core – local jar, both at compile time and runtime.
+    // No reflection / no soft-load: the scanner directly depends on cci_core APIs.
+    implementation files(cciCoreJar)
+
     // JourneyMap API – compile-only; no JourneyMap classes may appear outside client/journeymap/.
     // changing=true is required because the artifact is a SNAPSHOT.
     compileOnly(group: 'info.journeymap', name: 'journeymap-api-neoforge',
